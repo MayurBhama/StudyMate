@@ -201,7 +201,9 @@ with st.sidebar:
         value=st.session_state.get("student_name", ""),
         placeholder="Enter your name",
         key="name_input",
-    )
+    ).strip()
+    if not student_name:
+        student_name = ""
     if student_name and student_name != st.session_state.get("student_name"):
         st.session_state.student_name = student_name
         st.session_state.session_id = ensure_session(
@@ -432,6 +434,15 @@ if user_prompt:
 
                     response_placeholder.markdown(full_response)
                     response = result.get("response", full_response)
+
+                    # Confidence caption
+                    notes_uploaded = collection_count() > 0
+                    if predicted_route == "rag_query":
+                        st.caption("Answer retrieved from your uploaded notes.")
+                    elif notes_uploaded:
+                        st.caption("Response based on your uploaded notes.")
+                    else:
+                        st.caption("Response from general knowledge -- verify from your textbook.")
                 else:
                     result = study_graph.invoke(agent_state, config=config)
                     response = result.get("response", "I'm not sure how to respond to that.")

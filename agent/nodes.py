@@ -45,27 +45,53 @@ def _safe_invoke(llm: ChatGroq, messages: list, fallback: str = "I'm sorry, some
 # ── 1. ROUTER NODE ──────────────────────────────────────────────────────────
 
 ROUTE_PROMPT_WITHOUT_NOTES = """\
-You are a routing classifier for a study assistant.
-The student has NOT uploaded any notes/PDF yet.
-Classify the student's message into EXACTLY one of these categories:
-- explain    → the student wants a concept explained or wants general tutoring/chit-chat.
-- quiz       → the student wants to be quizzed or tested.
-- study_plan → the student wants a study plan or schedule.
-- rag_query  → the student is asking a question explicitly about their notes, documents, or uploaded files.
+Classify the user message into exactly one of these 4 categories.
+Return ONLY the category word. Nothing else. No punctuation.
 
-Reply with ONLY the category name, nothing else.
+explain    -- user wants a topic explained or described
+quiz       -- user wants to be tested, quizzed, or asked questions
+study_plan -- user wants a plan, schedule, or roadmap
+rag_query  -- user asks about their uploaded notes or document
+
+The student has NOT uploaded any notes, so rag_query should only be used
+if they explicitly mention notes, documents, or uploaded files.
+
+Examples:
+'explain photosynthesis' -> explain
+'quiz me on python' -> quiz
+'test my knowledge' -> quiz
+'what does my pdf say about loops' -> rag_query
+'make me a study plan' -> study_plan
+'i want to practice' -> quiz
+'tell me about recursion' -> explain
+
+User message: {message}
 """
 
 ROUTE_PROMPT_WITH_NOTES = """\
-You are a routing classifier for a study assistant.
-The student HAS uploaded study notes/PDF to their profile.
-Classify the student's message into EXACTLY one of these categories:
-- explain    → the student wants general non-academic conversation or chit-chat.
-- quiz       → the student wants to be quizzed, tested, or asked questions.
-- study_plan → the student wants a study plan, schedule, or curriculum.
-- rag_query  → the student is asking academic questions, explaining concepts, asking for facts, or requesting information that is likely covered in their study notes. If in doubt, route to rag_query.
+Classify the user message into exactly one of these 4 categories.
+Return ONLY the category word. Nothing else. No punctuation.
 
-Reply with ONLY the category name, nothing else.
+explain    -- user wants a topic explained or described
+quiz       -- user wants to be tested, quizzed, or asked questions
+study_plan -- user wants a plan, schedule, or roadmap
+rag_query  -- user asks about their uploaded notes or document, OR asks
+              an academic question that is likely covered in their notes.
+              If in doubt between explain and rag_query, choose rag_query.
+
+The student HAS uploaded study notes/PDF.
+
+Examples:
+'explain photosynthesis' -> rag_query
+'quiz me on python' -> quiz
+'test my knowledge' -> quiz
+'what does my pdf say about loops' -> rag_query
+'make me a study plan' -> study_plan
+'what is in my notes about arrays' -> rag_query
+'i want to practice' -> quiz
+'what is logistic regression' -> rag_query
+
+User message: {message}
 """
 
 
@@ -83,9 +109,10 @@ def router_node(state: AgentState) -> dict[str, Any]:
     route_prompt = ROUTE_PROMPT_WITH_NOTES if has_notes else ROUTE_PROMPT_WITHOUT_NOTES
 
     llm = _get_llm(temperature=0.0)
+    formatted_prompt = route_prompt.format(message=user_text)
     result = _safe_invoke(
         llm,
-        [SystemMessage(content=route_prompt), HumanMessage(content=user_text)],
+        [SystemMessage(content=formatted_prompt)],
         fallback="explain",
     )
 
@@ -145,19 +172,34 @@ def explain_node(state: AgentState) -> dict[str, Any]:
     except Exception:
         pass
 
-    system_content = f"""\
-You are StudyMate, a friendly and knowledgeable AI tutor.
-The student's name is {student}.
+    has_notes = bool(rag_ctx)
+    if has_notes:
+        system_content = f"""\
+You are StudyMate, a study tutor helping {student}.
+Answer ONLY based on the context provided below.
+If the context does not cover the topic fully, say:
+'Your notes do not cover this completely. Here is a general explanation -- please verify from your textbook.'
+Never present uncertain information as fact. If you are not sure, say so explicitly.
+Address {student} by name at the start of your response.
 
-Explain the topic clearly and thoroughly at an undergraduate level.
-Use examples, analogies, and structured formatting (headers, bullet points).
-Be encouraging and supportive.
-"""
-    if rag_ctx:
-        system_content += f"""
-The student has uploaded notes. Use the following retrieved context to enrich your explanation:
-
+Retrieved context from {student}'s uploaded notes:
+---
 {rag_ctx}
+---
+
+Explain the topic clearly at an undergraduate level.
+Use examples, analogies, and structured formatting (headers, bullet points).
+"""
+    else:
+        system_content = f"""\
+You are StudyMate, a study tutor helping {student}.
+The student has NOT uploaded any notes, so you are answering from general knowledge.
+Start your response by addressing {student} by name.
+Then add this disclaimer at the beginning:
+'I don\'t have your notes on this topic. Here is a general explanation -- please verify from your textbook.'
+Explain the topic clearly at an undergraduate level.
+Use examples, analogies, and structured formatting (headers, bullet points).
+Never present uncertain information as fact. If you are not sure, say so explicitly.
 """
 
     # Build conversation context (trimmed)
@@ -209,14 +251,15 @@ Reply with ONLY the JSON object, no other text.
 """
 
 QUIZ_EVALUATE_PROMPT = """\
-You are an encouraging tutor evaluating a student's quiz answers.
-Here are the questions, correct answers, and the student's answers:
+You are a strict quiz evaluator. Follow these rules exactly:
+1. Compare student answer ONLY against the correct answer provided.
+2. Do not give partial credit. An answer is correct or incorrect.
+3. For each question, write ONE line: "Q[number]: [Correct/Incorrect] -- [brief explanation]"
+4. Do NOT output a final score or weak areas list. The system calculates those.
+5. Be concise and factual.
 
+Quiz details:
 {details}
-
-For each question, briefly state whether the student was correct or incorrect and provide a helpful explanation.
-Format your response clearly using bullet points or short paragraphs.
-DO NOT output a final score or a list of weak areas, as the system will calculate and display those automatically.
 """
 
 
@@ -266,13 +309,14 @@ def quiz_generate_node(state: AgentState) -> dict[str, Any]:
         }
 
     # Build a readable quiz message
+    student = state.get("student_name", "Student")
     quiz_text = f"**Quiz on {topic}** (Attempt {attempts + 1}/3)\n\n"
     for i, q in enumerate(questions, 1):
         quiz_text += f"**Q{i}.** {q['question']}\n"
         for opt in q["options"]:
             quiz_text += f"  {opt}\n"
         quiz_text += "\n"
-    quiz_text += "\n_Reply with your answers like: A, B, C_"
+    quiz_text += f"\nGood luck, {student}! Select your answers below."
 
     return {
         "quiz_questions": questions,
@@ -339,12 +383,14 @@ def quiz_evaluate_node(state: AgentState) -> dict[str, Any]:
         except Exception:
             pass
 
-    result_text = f"**Quiz Results — {topic}**\n\n"
+    student = state.get("student_name", "Student")
+
+    result_text = f"**Quiz Results -- {topic}**\n\n"
     result_text += f"**Score: {score}%** ({correct_count}/{len(questions)} correct)\n\n"
     result_text += feedback
 
     if score < 70 and attempts < 3:
-        result_text += f"\n\nScore below 70%. Let's try again! (Attempt {attempts}/{3})"
+        result_text += f"\n\nKeep going, {student}! Let's try again on your weak areas. (Attempt {attempts}/3)"
         return {
             "quiz_score": score,
             "weak_topics": list(set(state.get("weak_topics", []) + [topic])),
@@ -354,9 +400,9 @@ def quiz_evaluate_node(state: AgentState) -> dict[str, Any]:
         }
 
     if score >= 70:
-        result_text += "\n\nGreat job! You passed the quiz!"
+        result_text += f"\n\nWell done, {student}! You passed the quiz!"
     else:
-        result_text += "\n\nYou've used all 3 attempts. Consider reviewing the topic and trying again later."
+        result_text += f"\n\nGood effort, {student}. Let's add these to your study plan and review them."
 
     return {
         "quiz_score": score,
@@ -406,11 +452,14 @@ def _parse_quiz_json(text: str) -> list[dict[str, Any]]:
 # ── 4. STUDY PLAN NODE ──────────────────────────────────────────────────────
 
 STUDY_PLAN_PROMPT = """\
-You are StudyMate, a study planning assistant.
-The student's name is {student}.
+Create a personalised 7-day study plan for {student}.
+Address {student} by name in the introduction of the plan.
 
-Create a detailed 7-day study plan based on these weak topics: {weak_topics}.
-Also consider the student's current topic of interest: {topic}.
+The student has struggled with: {weak_topics}.
+Create a 7-day study plan that focuses SPECIFICALLY on these topics.
+Day 1 and Day 2 must cover the weakest topic first.
+Each day must have: topic, what to study, one practice task.
+Do not include topics not in the weak areas list.
 
 Structure the plan day by day with:
 - Specific topics to cover each day
@@ -431,7 +480,13 @@ def study_plan_node(state: AgentState) -> dict[str, Any]:
     messages = state.get("messages", [])
 
     if not weak_topics:
-        weak_topics = [topic]
+        no_data_msg = (f"{student}, please complete at least one quiz first "
+                       "so I can personalise your study plan based on your weak areas.")
+        return {
+            "response": no_data_msg,
+            "messages": [AIMessage(content=no_data_msg)],
+            "error": "",
+        }
 
     has_notes = collection_count() > 0
     rag_ctx = ""
@@ -534,17 +589,18 @@ def rag_query_node(state: AgentState) -> dict[str, Any]:
         pass
 
     system_content = f"""\
-You are StudyMate, a friendly and knowledgeable AI tutor helping {student}.
-We have searched the student's uploaded notes, and here is the retrieved context:
+You are helping {student} understand their study notes.
+Answer ONLY using the retrieved context below.
+Do not add information from outside the context.
+If the context does not contain the answer, say:
+'Your uploaded notes do not cover this. I cannot answer reliably.'
+Quote which part of the notes you used to answer.
+Address {student} by name at the start of your response.
 
+Retrieved context from {student}'s uploaded notes:
 ---
 {rag_ctx}
 ---
-
-Your task:
-1. Try to answer the student's question using the retrieved context from their uploaded notes first. If the context contains the answer, ground your response in it and be specific.
-2. If the retrieved context does NOT contain the answer, or if the context is empty, answer the question clearly and thoroughly using your own general knowledge. However, you MUST preface your response with a brief note indicating that you did not find a direct answer in their uploaded notes, e.g., "I couldn't find a direct mention of this in your uploaded notes, but here is a general explanation:" or similar, to be fully transparent.
-3. Keep the tone encouraging, structured, and helpful.
 """
 
     llm = _get_llm(temperature=0.3)
