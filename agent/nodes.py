@@ -266,7 +266,7 @@ def quiz_generate_node(state: AgentState) -> dict[str, Any]:
         }
 
     # Build a readable quiz message
-    quiz_text = f"📝 **Quiz on {topic}** (Attempt {attempts + 1}/3)\n\n"
+    quiz_text = f"**Quiz on {topic}** (Attempt {attempts + 1}/3)\n\n"
     for i, q in enumerate(questions, 1):
         quiz_text += f"**Q{i}.** {q['question']}\n"
         for opt in q["options"]:
@@ -339,12 +339,12 @@ def quiz_evaluate_node(state: AgentState) -> dict[str, Any]:
         except Exception:
             pass
 
-    result_text = f"📊 **Quiz Results — {topic}**\n\n"
+    result_text = f"**Quiz Results — {topic}**\n\n"
     result_text += f"**Score: {score}%** ({correct_count}/{len(questions)} correct)\n\n"
     result_text += feedback
 
     if score < 70 and attempts < 3:
-        result_text += f"\n\n🔄 Score below 70%. Let's try again! (Attempt {attempts}/{3})"
+        result_text += f"\n\nScore below 70%. Let's try again! (Attempt {attempts}/{3})"
         return {
             "quiz_score": score,
             "weak_topics": list(set(state.get("weak_topics", []) + [topic])),
@@ -354,9 +354,9 @@ def quiz_evaluate_node(state: AgentState) -> dict[str, Any]:
         }
 
     if score >= 70:
-        result_text += "\n\n🎉 Great job! You passed the quiz!"
+        result_text += "\n\nGreat job! You passed the quiz!"
     else:
-        result_text += "\n\n📚 You've used all 3 attempts. Consider reviewing the topic and trying again later."
+        result_text += "\n\nYou've used all 3 attempts. Consider reviewing the topic and trying again later."
 
     return {
         "quiz_score": score,
@@ -459,10 +459,10 @@ def study_plan_node(state: AgentState) -> dict[str, Any]:
 
     plan = _safe_invoke(llm, conv)
 
-    response = "📋 **Your Personalized 7-Day Study Plan**\n\n"
+    response = "**Your Personalized 7-Day Study Plan**\n\n"
     response += plan
     response += "\n\n---\n"
-    response += "👆 **Please review the plan above.**\n"
+    response += "**Please review the plan above.**\n"
     response += "Use the **Approve** or **Reject** buttons in the sidebar to confirm."
 
     return {
@@ -484,8 +484,8 @@ def study_plan_save_node(state: AgentState) -> dict[str, Any]:
         try:
             save_study_plan(session_id, plan, approved=True)
             return {
-                "response": "✅ Study plan approved and saved! You can view it anytime in your session history.",
-                "messages": [AIMessage(content="✅ Study plan approved and saved!")],
+                "response": "Study plan approved and saved! You can view it anytime in your session history.",
+                "messages": [AIMessage(content="Study plan approved and saved!")],
                 "pending_plan": "",
                 "plan_approved": True,
                 "error": "",
@@ -497,8 +497,8 @@ def study_plan_save_node(state: AgentState) -> dict[str, Any]:
             }
     else:
         return {
-            "response": "❌ Study plan was not approved. Feel free to request a new one anytime!",
-            "messages": [AIMessage(content="❌ Study plan not approved.")],
+            "response": "Study plan was not approved. Feel free to request a new one anytime!",
+            "messages": [AIMessage(content="Study plan not approved.")],
             "pending_plan": "",
             "plan_approved": False,
             "error": "",
