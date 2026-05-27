@@ -148,10 +148,14 @@ def get_quiz_scores(session_id: str, db_path: Path = DB_PATH) -> list[dict[str, 
             (session_id,),
         ).fetchall()
     results = []
+    seen_topics = set()
     for r in rows:
         d = dict(r)
-        d["weak_areas"] = json.loads(d["weak_areas"]) if d["weak_areas"] else []
-        results.append(d)
+        topic = d["topic"]
+        if topic not in seen_topics:
+            seen_topics.add(topic)
+            d["weak_areas"] = json.loads(d["weak_areas"]) if d["weak_areas"] else []
+            results.append(d)
     return results
 
 

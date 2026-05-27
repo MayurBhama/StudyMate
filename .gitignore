@@ -1,36 +1,14 @@
-# Environment
 .env
-
-# ChromaDB local store
-chroma_db/
-
-# SQLite databases
-*.db
-
-# Python
 __pycache__/
-*.py[cod]
-*$py.class
-*.so
-*.egg-info/
-dist/
-build/
-.eggs/
-
-# Virtual environments
+*.pyc
+*.pyo
+.pytest_cache/
+chroma_db/
+*.db
+*.sqlite
+.DS_Store
+Thumbs.db
+*.log
 venv/
 .venv/
 env/
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Streamlit
-.streamlit/secrets.toml

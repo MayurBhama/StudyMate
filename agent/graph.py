@@ -7,6 +7,7 @@ to explain / quiz / study_plan / rag_query sub-workflows.
 from __future__ import annotations
 
 from langgraph.graph import END, StateGraph
+from langgraph.checkpoint.memory import MemorySaver
 
 from agent.state import AgentState
 from agent.nodes import (
@@ -80,12 +81,12 @@ def build_graph() -> StateGraph:
     )
 
     # ── Study plan HITL ──────────────────────────────────────────────────
-    # study_plan → END (waits for HITL approval via Streamlit)
-    # study_plan_save is invoked separately after approval
-    graph.add_edge("study_plan", END)
+    # study_plan → study_plan_save
+    graph.add_edge("study_plan", "study_plan_save")
     graph.add_edge("study_plan_save", END)
 
-    return graph.compile()
+    memory = MemorySaver()
+    return graph.compile(checkpointer=memory, interrupt_before=["study_plan_save"])
 
 
 # Pre-built graph instance for import convenience

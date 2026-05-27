@@ -101,12 +101,16 @@ class TestQuizNode:
     def test_quiz_generate_returns_questions(self, mock_llm_factory):
         mock_llm = MagicMock()
         mock_response = MagicMock()
-        mock_response.content = """[
+        mock_response.content = """{"questions": [
             {"question": "What is 2+2?", "options": ["A) 3", "B) 4", "C) 5", "D) 6"], "correct": "B", "explanation": "Basic math"},
             {"question": "What is 3+3?", "options": ["A) 5", "B) 6", "C) 7", "D) 8"], "correct": "B", "explanation": "Basic math"},
             {"question": "What is 4+4?", "options": ["A) 7", "B) 8", "C) 9", "D) 10"], "correct": "B", "explanation": "Basic math"}
-        ]"""
+        ]}"""
         mock_llm.invoke.return_value = mock_response
+        # bind() returns a new object whose invoke also needs to return our response
+        mock_bound = MagicMock()
+        mock_bound.invoke.return_value = mock_response
+        mock_llm.bind.return_value = mock_bound
         mock_llm_factory.return_value = mock_llm
 
         from agent.nodes import quiz_generate_node

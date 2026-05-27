@@ -1,109 +1,69 @@
-# 🎓 StudyMate — Personalized AI Study Agent
+# StudyMate
 
-A fully-featured AI-powered study companion built with **LangGraph**, **Groq**, **ChromaDB**, and **Streamlit**. StudyMate can explain topics, quiz you, generate personalized study plans, and answer questions from your uploaded notes.
+A personalised AI study agent built with LangGraph. It explains topics,
+quizzes students with adaptive retry logic, generates study plans with
+human approval, and answers questions from uploaded notes.
 
----
+## Features
 
-## ✨ Features
+- Topic explanation with context-aware responses
+- Adaptive quiz generation with iterative retry until 70% score
+- RAG-based Q&A from uploaded PDF notes
+- Personalised study plan generation with human-in-the-loop approval
+- Persistent memory -- weak topics and scores saved across sessions
+- Real-time streaming responses
+- LangSmith observability integration
 
-| Feature | Description |
-|---------|-------------|
-| 🧠 **Smart Routing** | Automatically classifies your intent (explain, quiz, study plan, or notes search) |
-| 💡 **Topic Explanations** | Clear, structured explanations at your level with RAG-enhanced context |
-| 📝 **Interactive Quizzes** | 3-question MCQs with evaluation, retry logic (up to 3 attempts), and weak-area tracking |
-| 📋 **Study Plans** | Personalized 7-day plans based on your weak topics with Human-in-the-Loop approval |
-| 🔍 **RAG Note Search** | Upload PDFs and ask questions — answers are grounded in your own notes |
-| 🧠 **Memory** | Short-term (last 10 messages) + long-term (SQLite: scores, weak topics, plans) |
-| 📊 **Progress Tracking** | Weak topics tracker, quiz score history, session persistence |
-| 🔭 **LangSmith Observability** | Every graph execution is traced and tagged |
+## Tech Stack
 
----
+- **LangGraph** -- agent framework and graph orchestration
+- **LangChain** -- LLM integration and RAG pipeline
+- **Groq API** -- LLM inference (llama-3.1-8b-instant)
+- **ChromaDB** -- local vector store for PDF notes
+- **sentence-transformers** -- local embeddings (all-MiniLM-L6-v2)
+- **SQLite** -- persistent session and memory storage
+- **Streamlit** -- user interface and deployment
+- **LangSmith** -- agent observability and tracing
 
-## 🏗️ Architecture
-
-```
-┌─────────────────────────────────────────────────────┐
-│                   Streamlit UI                       │
-│  ┌──────────┐  ┌──────────┐  ┌────────────────────┐ │
-│  │ Chat     │  │ Quiz     │  │ Sidebar            │ │
-│  │ Interface│  │ Forms    │  │ • Profile           │ │
-│  │          │  │ (Radio)  │  │ • PDF Upload        │ │
-│  │          │  │          │  │ • Weak Topics       │ │
-│  │          │  │          │  │ • Scores            │ │
-│  │          │  │          │  │ • HITL Approval     │ │
-│  └────┬─────┘  └────┬─────┘  └────────────────────┘ │
-│       │              │                               │
-└───────┼──────────────┼───────────────────────────────┘
-        │              │
-        ▼              ▼
-┌─────────────────────────────────────────────────────┐
-│              LangGraph Agent Graph                   │
-│                                                      │
-│  ┌────────┐                                          │
-│  │ Router │──── explain ────► Explain Node ──► END   │
-│  │  Node  │──── quiz ──────► Quiz Gen ──► END        │
-│  │        │                   (answers)               │
-│  │        │                  Quiz Eval ◄──┐           │
-│  │        │                   │  retry?   │           │
-│  │        │                   ├── yes ────┘           │
-│  │        │                   └── no ──► END          │
-│  │        │──── study_plan ─► Plan Node ──► END       │
-│  │        │                   (HITL)                  │
-│  │        │                  Plan Save ──► END        │
-│  │        │──── rag_query ──► RAG Node ──► END        │
-│  └────────┘                                          │
-└─────────────────────────────────────────────────────┘
-        │                    │
-        ▼                    ▼
-┌──────────────┐    ┌──────────────────┐
-│   ChromaDB   │    │     SQLite       │
-│  (Vectors)   │    │  (Persistence)   │
-│              │    │  • Sessions      │
-│  all-MiniLM  │    │  • Quiz Scores   │
-│  -L6-v2      │    │  • Weak Topics   │
-│              │    │  • Study Plans   │
-└──────────────┘    └──────────────────┘
-```
-
----
-
-## 📂 Project Structure
+## Project Structure
 
 ```
 studymate/
-├── app.py                  # Streamlit UI entry point
+├── app.py
 ├── agent/
-│   ├── graph.py            # Main LangGraph graph definition
-│   ├── nodes.py            # All node functions
-│   ├── state.py            # AgentState TypedDict
-│   └── memory.py           # Short + long term memory handlers
+│   ├── __init__.py
+│   ├── graph.py
+│   ├── nodes.py
+│   ├── state.py
+│   └── memory.py
 ├── rag/
-│   ├── loader.py           # PDF loader + chunker
-│   └── retriever.py        # ChromaDB vector store setup
+│   ├── __init__.py
+│   ├── loader.py
+│   └── retriever.py
 ├── db/
-│   └── sqlite_store.py     # SQLite session + quiz score storage
+│   ├── __init__.py
+│   └── sqlite_store.py
 ├── tests/
-│   ├── test_graph.py       # LangGraph workflow tests
-│   ├── test_rag.py         # RAG pipeline tests
-│   └── test_memory.py      # Memory persistence tests
-├── .env.example            # Template with key names only
+│   ├── __init__.py
+│   ├── test_graph.py
+│   ├── test_memory.py
+│   └── test_rag.py
+├── .env
 ├── .gitignore
 ├── requirements.txt
 └── README.md
 ```
 
----
+## Setup
 
-## 🚀 Setup Instructions
-
-### 1. Clone the Repository
+### 1. Clone the repository
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/StudyMate.git
-cd StudyMate
+git clone https://github.com/YOUR_USERNAME/studymate.git
+cd studymate
 ```
 
-### 2. Create a Virtual Environment
+### 2. Create a virtual environment
 
 ```bash
 python -m venv venv
@@ -111,92 +71,46 @@ python -m venv venv
 # Windows
 venv\Scripts\activate
 
-# macOS/Linux
+# Mac/Linux
 source venv/bin/activate
 ```
 
-### 3. Install Dependencies
+### 3. Install dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 4. Configure Environment Variables
+### 4. Configure API keys
 
-```bash
-cp .env.example .env
-```
-
-Edit `.env` and add your actual API keys:
+Open the `.env` file and fill in your keys:
 
 ```
-GROQ_API_KEY=your_groq_api_key_here
-LANGSMITH_API_KEY=your_langsmith_api_key_here
-LANGSMITH_TRACING=true
-LANGSMITH_PROJECT=studymate
+GROQ_API_KEY=your_groq_api_key
+LANGCHAIN_API_KEY=your_langsmith_api_key
+LANGCHAIN_TRACING_V2=true
+LANGCHAIN_PROJECT=studymate
 ```
 
-### 5. Run Tests
+Get a Groq API key free at: https://console.groq.com
 
-```bash
-pytest tests/ -v
-```
+Get a LangSmith API key free at: https://smith.langchain.com
 
-### 6. Launch the App
+### 5. Run the app
 
 ```bash
 streamlit run app.py
 ```
 
-The app will open at `http://localhost:8501`.
+## How It Works
 
----
+The agent uses a Router Node with conditional edges to classify user input
+into four routes: explain, quiz, study_plan, or rag_query. Each route
+triggers a different subgraph. Quiz uses an iterative workflow that retries
+until the student scores above 70%. Study plans use LangGraph's
+interrupt_before for human-in-the-loop approval before saving. All session
+data persists in SQLite across restarts.
 
-## 🧪 Testing
+## Requirements
 
-```bash
-# Run all tests with verbose output
-pytest tests/ -v
-
-# Run specific test files
-pytest tests/test_graph.py -v
-pytest tests/test_rag.py -v
-pytest tests/test_memory.py -v
-```
-
----
-
-## 🔧 Tech Stack
-
-| Component | Technology |
-|-----------|------------|
-| Agent Framework | LangGraph |
-| Tools + RAG | LangChain |
-| LLM | Groq API (LLaMA 3.3 70B) |
-| Vector Store | ChromaDB (local) |
-| Embeddings | sentence-transformers (all-MiniLM-L6-v2) |
-| Persistence | SQLite |
-| UI | Streamlit |
-| Observability | LangSmith |
-| PDF Parsing | pypdf |
-
----
-
-## 📋 Usage Guide
-
-1. **Enter your name** in the sidebar to start a session
-2. **Upload a PDF** (optional) to enable RAG-powered note search
-3. **Chat naturally** — StudyMate auto-routes your intent:
-   - *"Explain photosynthesis"* → Topic explanation
-   - *"Quiz me on calculus"* → Interactive MCQ quiz
-   - *"Create a study plan"* → 7-day personalized plan
-   - *"What do my notes say about X?"* → RAG note search
-4. **Take quizzes** — answer via radio buttons; retry if score < 70%
-5. **Approve study plans** — use the sidebar Approve/Reject buttons
-6. **Track progress** — weak topics and scores are saved across sessions
-
----
-
-## 📜 License
-
-MIT License. See [LICENSE](LICENSE) for details.
+Python 3.10 or higher

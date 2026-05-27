@@ -18,7 +18,7 @@ from langchain_groq import ChatGroq
 from agent.state import AgentState
 from agent.memory import trim_messages, persist_weak_topics
 from db.sqlite_store import save_quiz_score, save_study_plan, get_weak_topics
-from rag.retriever import retrieve_as_text
+from rag.retriever import retrieve_as_text, collection_count
 
 load_dotenv()
 
@@ -27,7 +27,7 @@ load_dotenv()
 def _get_llm(temperature: float = 0.3) -> ChatGroq:
     """Build a ChatGroq instance (reads GROQ_API_KEY from env)."""
     return ChatGroq(
-        model="llama-3.3-70b-versatile",
+        model="llama-3.1-8b-instant",
         temperature=temperature,
         api_key=os.getenv("GROQ_API_KEY"),
     )
@@ -44,13 +44,26 @@ def _safe_invoke(llm: ChatGroq, messages: list, fallback: str = "I'm sorry, some
 
 # ── 1. ROUTER NODE ──────────────────────────────────────────────────────────
 
-ROUTE_PROMPT = """\
+ROUTE_PROMPT_WITHOUT_NOTES = """\
 You are a routing classifier for a study assistant.
+The student has NOT uploaded any notes/PDF yet.
 Classify the student's message into EXACTLY one of these categories:
-- explain   → the student wants a concept explained
-- quiz      → the student wants to be quizzed or tested
-- study_plan → the student wants a study plan or schedule
-- rag_query → the student is asking a question about their uploaded notes/PDF
+- explain    → the student wants a concept explained or wants general tutoring/chit-chat.
+- quiz       → the student wants to be quizzed or tested.
+- study_plan → the student wants a study plan or schedule.
+- rag_query  → the student is asking a question explicitly about their notes, documents, or uploaded files.
+
+Reply with ONLY the category name, nothing else.
+"""
+
+ROUTE_PROMPT_WITH_NOTES = """\
+You are a routing classifier for a study assistant.
+The student HAS uploaded study notes/PDF to their profile.
+Classify the student's message into EXACTLY one of these categories:
+- explain    → the student wants general non-academic conversation or chit-chat.
+- quiz       → the student wants to be quizzed, tested, or asked questions.
+- study_plan → the student wants a study plan, schedule, or curriculum.
+- rag_query  → the student is asking academic questions, explaining concepts, asking for facts, or requesting information that is likely covered in their study notes. If in doubt, route to rag_query.
 
 Reply with ONLY the category name, nothing else.
 """
@@ -65,10 +78,14 @@ def router_node(state: AgentState) -> dict[str, Any]:
     last_msg = messages[-1]
     user_text = last_msg.content if hasattr(last_msg, "content") else str(last_msg)
 
+    # Check if a PDF is uploaded in ChromaDB
+    has_notes = collection_count() > 0
+    route_prompt = ROUTE_PROMPT_WITH_NOTES if has_notes else ROUTE_PROMPT_WITHOUT_NOTES
+
     llm = _get_llm(temperature=0.0)
     result = _safe_invoke(
         llm,
-        [SystemMessage(content=ROUTE_PROMPT), HumanMessage(content=user_text)],
+        [SystemMessage(content=route_prompt), HumanMessage(content=user_text)],
         fallback="explain",
     )
 
@@ -166,24 +183,27 @@ QUIZ_GENERATE_PROMPT = """\
 You are StudyMate's quiz generator.
 Generate exactly 3 multiple-choice questions on the topic: "{topic}".
 {weak_focus}
+{previous_questions_focus}
 
-Return your response as a valid JSON array. Each element must have:
+Return your response as a JSON object containing a "questions" array. Each element must have:
 - "question": the question text
 - "options": a list of 4 options labelled A, B, C, D
 - "correct": the letter of the correct answer (A/B/C/D)
 - "explanation": brief explanation of the correct answer
 
 Example format:
-[
-  {{
-    "question": "What is ...?",
-    "options": ["A) ...", "B) ...", "C) ...", "D) ..."],
-    "correct": "A",
-    "explanation": "Because ..."
-  }}
-]
+{{
+  "questions": [
+    {{
+      "question": "What is ...?",
+      "options": ["A) ...", "B) ...", "C) ...", "D) ..."],
+      "correct": "A",
+      "explanation": "Because ..."
+    }}
+  ]
+}}
 
-Reply with ONLY the JSON array, no other text.
+Reply with ONLY the JSON object, no other text.
 """
 
 QUIZ_EVALUATE_PROMPT = """\
@@ -208,13 +228,33 @@ def quiz_generate_node(state: AgentState) -> dict[str, Any]:
     weak_topics = state.get("weak_topics", [])
     attempts = state.get("quiz_attempts", 0)
 
+    # Check if a PDF is uploaded to generate custom quiz questions from it
+    has_notes = collection_count() > 0
+    rag_ctx = ""
+    if has_notes:
+        try:
+            rag_ctx = retrieve_as_text(topic, k=3)
+        except Exception:
+            pass
+
     weak_focus = ""
     if attempts > 0 and weak_topics:
         weak_focus = f"Focus especially on these weak areas: {', '.join(weak_topics)}"
 
+    previous_questions = state.get("quiz_questions", [])
+    previous_questions_focus = ""
+    if previous_questions and attempts > 0:
+        prev_texts = [q.get("question", "") for q in previous_questions]
+        previous_questions_focus = f"\\nIMPORTANT: Do NOT generate the following questions again:\\n- " + "\\n- ".join(prev_texts)
+
     llm = _get_llm(temperature=0.7)
-    prompt = QUIZ_GENERATE_PROMPT.format(topic=topic, weak_focus=weak_focus)
-    result = _safe_invoke(llm, [SystemMessage(content=prompt)])
+    
+    prompt = QUIZ_GENERATE_PROMPT.format(topic=topic, weak_focus=weak_focus, previous_questions_focus=previous_questions_focus)
+    if rag_ctx:
+        prompt += f"\n\nIMPORTANT: Use the following retrieved context from the student's uploaded notes to generate questions that test their knowledge of this material specifically:\n{rag_ctx}"
+
+    llm_json = llm.bind(response_format={"type": "json_object"})
+    result = _safe_invoke(llm_json, [SystemMessage(content=prompt)])
 
     # Parse JSON from response
     questions = _parse_quiz_json(result)
@@ -328,15 +368,26 @@ def quiz_evaluate_node(state: AgentState) -> dict[str, Any]:
 
 def _parse_quiz_json(text: str) -> list[dict[str, Any]]:
     """Robustly extract a JSON array of quiz questions from LLM output."""
-    # Try direct parse
     try:
         data = json.loads(text)
+        if isinstance(data, dict) and "questions" in data:
+            return data["questions"]
         if isinstance(data, list):
             return data
     except json.JSONDecodeError:
         pass
 
-    # Try to find JSON array in the text
+    # Try to find JSON dictionary in the text
+    match = re.search(r"\{.*\}", text, re.DOTALL)
+    if match:
+        try:
+            data = json.loads(match.group())
+            if isinstance(data, dict) and "questions" in data:
+                return data["questions"]
+        except json.JSONDecodeError:
+            pass
+            
+    # Try array as fallback
     match = re.search(r"\[.*\]", text, re.DOTALL)
     if match:
         try:
@@ -374,17 +425,36 @@ def study_plan_node(state: AgentState) -> dict[str, Any]:
     topic = state.get("topic", "general")
     session_id = state.get("session_id", "")
     weak_topics = state.get("weak_topics", [])
+    messages = state.get("messages", [])
 
     if not weak_topics:
         weak_topics = [topic]
 
-    llm = _get_llm(temperature=0.6)
+    has_notes = collection_count() > 0
+    rag_ctx = ""
+    if has_notes:
+        try:
+            rag_ctx = retrieve_as_text(topic, k=3)
+        except Exception:
+            pass
+
+    llm = _get_llm(temperature=0.7)
     prompt = STUDY_PLAN_PROMPT.format(
         student=student,
         weak_topics=", ".join(weak_topics),
         topic=topic,
     )
-    plan = _safe_invoke(llm, [SystemMessage(content=prompt)])
+    if rag_ctx:
+        prompt += f"\n\nIMPORTANT: The student has uploaded study notes. Please design the study plan explicitly around the following extracted content from their notes:\n{rag_ctx}"
+
+    conv = [SystemMessage(content=prompt)]
+    for m in trim_messages(messages, max_messages=4):
+        if hasattr(m, "type"):
+            conv.append(m)
+        else:
+            conv.append(HumanMessage(content=str(m)))
+
+    plan = _safe_invoke(llm, conv)
 
     response = "📋 **Your Personalized 7-Day Study Plan**\n\n"
     response += plan
@@ -442,14 +512,8 @@ def rag_query_node(state: AgentState) -> dict[str, Any]:
     last_msg = messages[-1] if messages else None
     user_text = last_msg.content if last_msg and hasattr(last_msg, "content") else "What are the key concepts?"
 
-    # Retrieve context
-    rag_ctx = ""
-    try:
-        rag_ctx = retrieve_as_text(user_text, k=3)
-    except Exception:
-        pass
-
-    if not rag_ctx:
+    # Check if there are any documents in the vector store first
+    if collection_count() == 0:
         no_ctx = ("I don't have any uploaded notes to search through yet. "
                   "Please upload a PDF in the sidebar first, then ask your question again!")
         return {
@@ -459,13 +523,25 @@ def rag_query_node(state: AgentState) -> dict[str, Any]:
             "error": "",
         }
 
-    system_content = f"""\
-You are StudyMate, helping {student} understand their study notes.
-Answer the student's question using ONLY the following context from their uploaded notes.
-If the context doesn't contain enough information, say so clearly.
+    # Retrieve context
+    rag_ctx = ""
+    try:
+        rag_ctx = retrieve_as_text(user_text, k=3)
+    except Exception:
+        pass
 
-Context from notes:
+    system_content = f"""\
+You are StudyMate, a friendly and knowledgeable AI tutor helping {student}.
+We have searched the student's uploaded notes, and here is the retrieved context:
+
+---
 {rag_ctx}
+---
+
+Your task:
+1. Try to answer the student's question using the retrieved context from their uploaded notes first. If the context contains the answer, ground your response in it and be specific.
+2. If the retrieved context does NOT contain the answer, or if the context is empty, answer the question clearly and thoroughly using your own general knowledge. However, you MUST preface your response with a brief note indicating that you did not find a direct answer in their uploaded notes, e.g., "I couldn't find a direct mention of this in your uploaded notes, but here is a general explanation:" or similar, to be fully transparent.
+3. Keep the tone encouraging, structured, and helpful.
 """
 
     llm = _get_llm(temperature=0.3)

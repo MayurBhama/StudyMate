@@ -62,7 +62,11 @@ def add_documents(docs: list[Document], persist_directory: str = CHROMA_DIR) -> 
     Returns the number of chunks added.
     """
     vs = get_vectorstore(persist_directory)
-    vs.add_documents(docs)
+    
+    batch_size = 150
+    for i in range(0, len(docs), batch_size):
+        vs.add_documents(docs[i : i + batch_size])
+        
     return len(docs)
 
 
@@ -71,6 +75,13 @@ def ingest_pdf(file: str | BinaryIO, persist_directory: str = CHROMA_DIR) -> int
 
     Returns the number of chunks indexed.
     """
+    vs = get_vectorstore(persist_directory)
+    try:
+        vs.delete_collection()
+    except Exception:
+        pass
+    reset_vectorstore()
+    
     chunks = load_and_chunk_pdf(file)
     if not chunks:
         return 0
