@@ -258,9 +258,15 @@ st.markdown(
             font-weight: 700;
             margin-bottom: 0.25rem;
         ">StudyMate</h1>
-        <p style="color: #94a3b8; font-size: 1.1rem;">
+        <p style="color: #94a3b8; font-size: 1.1rem; margin-bottom: 1rem;">
             Your personalised AI study companion
         </p>
+        <div style="color: #cbd5e1; font-size: 0.95rem; display: flex; justify-content: center; gap: 1.5rem; flex-wrap: wrap; max-width: 600px; margin: 0 auto;">
+            <span>• Explain topics</span>
+            <span>• Take a quiz</span>
+            <span>• Get a study plan</span>
+            <span>• Search your notes</span>
+        </div>
     </div>
     """,
     unsafe_allow_html=True,

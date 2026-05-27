@@ -118,7 +118,9 @@ def _extract_topic(user_text: str, current_topic: str) -> str:
             ],
             fallback=current_topic or "general",
         )
-        topic = result.strip().strip('"').strip("'")
+        topic = result.strip().strip('"').strip("'").lower()
+        if topic == "general" and current_topic and current_topic != "general":
+            return current_topic
         return topic if topic else (current_topic or "general")
     except Exception:
         return current_topic or "general"
@@ -181,7 +183,7 @@ The student has uploaded notes. Use the following retrieved context to enrich yo
 
 QUIZ_GENERATE_PROMPT = """\
 You are StudyMate's quiz generator.
-Generate exactly 3 multiple-choice questions on the topic: "{topic}".
+Generate exactly 5 multiple-choice questions on the topic: "{topic}".
 {weak_focus}
 {previous_questions_focus}
 
@@ -207,18 +209,14 @@ Reply with ONLY the JSON object, no other text.
 """
 
 QUIZ_EVALUATE_PROMPT = """\
-You are evaluating a student's quiz answers.
+You are an encouraging tutor evaluating a student's quiz answers.
 Here are the questions, correct answers, and the student's answers:
 
 {details}
 
-For each question, state whether the student was correct or incorrect and why.
-Then give an overall score as a percentage.
-Finally, list any weak areas the student should review.
-
-Format your response clearly with headers.
-End with a line: SCORE: <number>%
-And a line: WEAK_AREAS: <comma-separated topics or "none">
+For each question, briefly state whether the student was correct or incorrect and provide a helpful explanation.
+Format your response clearly using bullet points or short paragraphs.
+DO NOT output a final score or a list of weak areas, as the system will calculate and display those automatically.
 """
 
 
@@ -307,14 +305,19 @@ def quiz_evaluate_node(state: AgentState) -> dict[str, Any]:
 
     for i, q in enumerate(questions):
         student_ans = answers_raw[i].strip().upper() if i < len(answers_raw) else "?"
-        is_correct = student_ans == q.get("correct", "").upper()
+        # Safely extract just the letter from the correct answer
+        correct_ans = q.get("correct", "A").strip().upper()
+        if correct_ans:
+            correct_ans = correct_ans[0]
+            
+        is_correct = student_ans == correct_ans
         if is_correct:
             correct_count += 1
         else:
             weak_areas.append(q.get("question", f"Question {i+1}")[:50])
 
         details += f"Q{i+1}: {q['question']}\n"
-        details += f"Correct: {q['correct']}\n"
+        details += f"Correct Answer: {correct_ans}\n"
         details += f"Student answered: {student_ans}\n"
         details += f"Explanation: {q.get('explanation', 'N/A')}\n\n"
 

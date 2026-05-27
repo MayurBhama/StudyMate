@@ -104,7 +104,9 @@ class TestQuizNode:
         mock_response.content = """{"questions": [
             {"question": "What is 2+2?", "options": ["A) 3", "B) 4", "C) 5", "D) 6"], "correct": "B", "explanation": "Basic math"},
             {"question": "What is 3+3?", "options": ["A) 5", "B) 6", "C) 7", "D) 8"], "correct": "B", "explanation": "Basic math"},
-            {"question": "What is 4+4?", "options": ["A) 7", "B) 8", "C) 9", "D) 10"], "correct": "B", "explanation": "Basic math"}
+            {"question": "What is 4+4?", "options": ["A) 7", "B) 8", "C) 9", "D) 10"], "correct": "B", "explanation": "Basic math"},
+            {"question": "What is 5+5?", "options": ["A) 9", "B) 10", "C) 11", "D) 12"], "correct": "B", "explanation": "Basic math"},
+            {"question": "What is 6+6?", "options": ["A) 11", "B) 12", "C) 13", "D) 14"], "correct": "B", "explanation": "Basic math"}
         ]}"""
         mock_llm.invoke.return_value = mock_response
         # bind() returns a new object whose invoke also needs to return our response
@@ -119,7 +121,7 @@ class TestQuizNode:
         result = quiz_generate_node(state)
 
         assert "quiz_questions" in result
-        assert len(result["quiz_questions"]) == 3
+        assert len(result["quiz_questions"]) == 5
         assert result["quiz_attempts"] == 1
 
 
