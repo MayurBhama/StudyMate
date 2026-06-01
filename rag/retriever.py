@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import BinaryIO
 
 from langchain_community.vectorstores import Chroma
-from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_core.documents import Document
 
 from rag.loader import load_and_chunk_pdf
@@ -130,9 +130,13 @@ def collection_count(persist_directory: str = CHROMA_DIR) -> int:
 
 # -- Raw ChromaDB Client for retrieve_context ---------------------------------
 import chromadb
-from chromadb.config import Settings
 
-client = chromadb.PersistentClient(path=CHROMA_DIR)
+IS_CLOUD = os.environ.get("STREAMLIT_SHARING_MODE") is not None
+
+if IS_CLOUD:
+    client = chromadb.Client()
+else:
+    client = chromadb.PersistentClient(path=CHROMA_DIR)
 
 def retrieve_context(query: str, n_results: int = 3) -> list[str]:
     col = client.get_or_create_collection(
@@ -145,3 +149,4 @@ def retrieve_context(query: str, n_results: int = 3) -> list[str]:
     )
     chunks = results["documents"][0] if results["documents"] else []
     return [sanitise_text(c) for c in chunks]
+

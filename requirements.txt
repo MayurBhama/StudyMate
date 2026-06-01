@@ -1,18 +1,24 @@
---extra-index-url https://download.pytorch.org/whl/cpu
-torch
-pysqlite3-binary
-langchain==0.3.25
-langchain-groq==0.3.2
-langchain-community==0.3.24
-langchain-huggingface==0.2.0
-langchain-core==0.3.63
-langchain-text-splitters==0.3.8
-langgraph==0.4.1
-chromadb==0.5.23
-sentence-transformers==4.1.0
-transformers==4.44.2
-tokenizers==0.19.1
-streamlit==1.45.1
-python-dotenv==1.1.0
-pypdf==5.6.0
-langsmith==0.3.42
+# LangGraph and LangChain
+langgraph==0.2.28
+langchain==0.3.7
+langchain-core==0.3.15
+langchain-groq==0.2.1
+langchain-community==0.3.7
+langchain-text-splitters==0.3.2
+
+# LLM observability
+langsmith==0.1.140
+
+# RAG
+chromadb==0.4.24
+sentence-transformers==2.7.0
+
+# PDF
+pypdf==4.3.1
+
+# UI
+streamlit==1.39.0
+
+# Utils
+python-dotenv==1.0.1
+pydantic==2.8.2
