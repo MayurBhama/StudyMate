@@ -17,8 +17,9 @@ from langchain_core.messages import AIMessage, HumanMessage
 # -- Environment ---------------------------------------------------------------
 load_dotenv()
 
-# Verify LangSmith observability is enabled via .env
-assert os.environ.get("LANGCHAIN_TRACING_V2") == "true", "LANGCHAIN_TRACING_V2 not set in .env"
+# LangSmith observability can be enabled via Streamlit Secrets (optional)
+if not os.environ.get("LANGCHAIN_TRACING_V2"):
+    os.environ["LANGCHAIN_TRACING_V2"] = "false"
 
 # -- Local imports (after dotenv) ----------------------------------------------
 from agent.graph import study_graph  # noqa: E402
