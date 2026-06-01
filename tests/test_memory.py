@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import os
 import sys
-import tempfile
 from pathlib import Path
 
 import pytest
@@ -131,7 +129,6 @@ class TestLongTermMemory:
         # Patch DB_PATH at the module level so default args pick it up
         with patch("db.sqlite_store.DB_PATH", self.db_path):
             # Re-import to get fresh function refs using patched DB_PATH
-            from agent.memory import load_session_memory
             # Call with explicit db_path functions via the patched module
             import db.sqlite_store as store
             session = store.get_session(sid, db_path=self.db_path)

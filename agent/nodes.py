@@ -17,7 +17,7 @@ from langchain_groq import ChatGroq
 
 from agent.state import AgentState
 from agent.memory import trim_messages, persist_weak_topics
-from db.sqlite_store import save_quiz_score, save_study_plan, get_weak_topics
+from db.sqlite_store import save_quiz_score, save_study_plan
 from rag.retriever import retrieve_as_text, collection_count, retrieve_context
 
 load_dotenv()
@@ -308,7 +308,7 @@ def quiz_generate_node(state: AgentState) -> dict[str, Any]:
     previous_questions_focus = ""
     if previous_questions and attempts > 0:
         prev_texts = [q.get("question", "") for q in previous_questions]
-        previous_questions_focus = f"\\nIMPORTANT: Do NOT generate the following questions again:\\n- " + "\\n- ".join(prev_texts)
+        previous_questions_focus = "\\nIMPORTANT: Do NOT generate the following questions again:\\n- " + "\\n- ".join(prev_texts)
 
     llm = _get_llm(temperature=0.7)
     

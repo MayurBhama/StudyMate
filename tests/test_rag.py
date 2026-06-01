@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import os
 import sys
-import tempfile
-import shutil
 from pathlib import Path
 
 import pytest
@@ -67,7 +65,7 @@ class TestRetriever:
 
     def test_add_and_retrieve(self):
         """Adding documents then retrieving should return relevant results."""
-        from rag.retriever import add_documents, retrieve, get_vectorstore
+        from rag.retriever import add_documents, retrieve
 
         docs = [
             Document(page_content="Photosynthesis converts light energy into chemical energy in plants.",

@@ -7,7 +7,6 @@ note search.  Powered by LangGraph + Groq + ChromaDB.
 from __future__ import annotations
 
 import os
-import uuid
 from typing import Any
 
 import streamlit as st
@@ -25,13 +24,7 @@ if not os.environ.get("LANGCHAIN_TRACING_V2"):
 from agent.graph import study_graph  # noqa: E402
 from agent.memory import ensure_session, load_session_memory, trim_messages  # noqa: E402
 from db.sqlite_store import (  # noqa: E402
-    get_weak_topics,
-    get_quiz_scores,
     get_latest_plan,
-    list_sessions,
-    save_study_plan,
-    approve_study_plan,
-    init_db,
 )
 from rag.retriever import ingest_pdf, collection_count  # noqa: E402
 
