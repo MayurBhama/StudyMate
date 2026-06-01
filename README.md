@@ -111,6 +111,56 @@ until the student scores above 70%. Study plans use LangGraph's
 interrupt_before for human-in-the-loop approval before saving. All session
 data persists in SQLite across restarts.
 
+### Architecture Flowchart
+
+```mermaid
+graph TD
+    %% Define styles
+    classDef nodeStyle fill:#4f46e5,stroke:#312e81,stroke-width:2px,color:white,rx:5px,ry:5px;
+    classDef ioStyle fill:#0f172a,stroke:#334155,stroke-width:2px,color:white,rx:20px,ry:20px;
+    classDef condStyle fill:#0284c7,stroke:#0369a1,stroke-width:2px,color:white,rx:5px,ry:5px;
+    classDef hitlStyle fill:#e11d48,stroke:#9f1239,stroke-width:2px,color:white,rx:5px,ry:5px;
+
+    %% Nodes
+    Input([User Message]):::ioStyle
+    Router{Router Node}:::condStyle
+    
+    Explain[Explain Node]:::nodeStyle
+    Rag[RAG Query Node]:::nodeStyle
+    
+    QuizGen[Quiz Generate Node]:::nodeStyle
+    WaitAns([Wait for Answers in UI]):::ioStyle
+    QuizEval[Quiz Evaluate Node]:::nodeStyle
+    
+    PlanGen[Study Plan Node]:::nodeStyle
+    HITL([Human-in-the-Loop Interruption]):::hitlStyle
+    PlanSave[Study Plan Save Node]:::nodeStyle
+    
+    EndNode([END / Output to UI]):::ioStyle
+
+    %% Routing logic
+    Input --> Router
+    Router -->|route='explain'| Explain
+    Router -->|route='rag_query'| Rag
+    Router -->|route='quiz'| QuizGen
+    Router -->|route='study_plan'| PlanGen
+
+    %% Standard responses
+    Explain --> EndNode
+    Rag --> EndNode
+
+    %% Quiz loop
+    QuizGen --> WaitAns
+    WaitAns -. User Submits .-> QuizEval
+    QuizEval -->|score < 70 & attempts < 3| QuizGen
+    QuizEval -->|score >= 70 or max attempts| EndNode
+
+    %% Study Plan HITL
+    PlanGen --> HITL
+    HITL -. User Approves/Rejects .-> PlanSave
+    PlanSave --> EndNode
+```
+
 ## Requirements
 
 Python 3.10 or higher
