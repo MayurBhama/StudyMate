@@ -158,7 +158,7 @@ def _init_session_state() -> None:
             st.session_state[k] = v
             
     if not st.session_state.session_id:
-        from db.sqlite_store import ensure_session
+        from agent.memory import ensure_session
         st.session_state.session_id = ensure_session(
             st.session_state.student_name or "Student", None
         )
