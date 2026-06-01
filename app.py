@@ -156,7 +156,12 @@ def _init_session_state() -> None:
     for k, v in defaults.items():
         if k not in st.session_state:
             st.session_state[k] = v
-
+            
+    if not st.session_state.session_id:
+        from db.sqlite_store import ensure_session
+        st.session_state.session_id = ensure_session(
+            st.session_state.student_name or "Student", None
+        )
 
 _init_session_state()
 
@@ -227,13 +232,15 @@ with st.sidebar:
     )
     if uploaded is not None and st.session_state.get("last_uploaded_filename") != uploaded.name:
         with st.spinner("Indexing your notes..."):
-            count = ingest_pdf(uploaded)
+            coll_name = f"user_{st.session_state.session_id.replace('-', '')}"
+            count = ingest_pdf(uploaded, collection_name=coll_name)
         st.session_state.last_uploaded_filename = uploaded.name
         st.success(f"Indexed {count} chunks from {uploaded.name}")
 
     doc_count = 0
     try:
-        doc_count = collection_count()
+        coll_name = f"user_{st.session_state.session_id.replace('-', '')}"
+        doc_count = collection_count(collection_name=coll_name)
     except Exception:
         pass
     if doc_count > 0:

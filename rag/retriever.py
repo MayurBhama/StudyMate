@@ -24,7 +24,7 @@ EMBEDDING_MODEL = "all-MiniLM-L6-v2"
 # ── singleton caches ─────────────────────────────────────────────────────────
 
 _embeddings: HuggingFaceEmbeddings | None = None
-_vectorstore: Chroma | None = None
+_vectorstores: dict[str, Chroma] = {}
 
 
 def get_embeddings() -> HuggingFaceEmbeddings:
@@ -39,22 +39,22 @@ def get_embeddings() -> HuggingFaceEmbeddings:
     return _embeddings
 
 
-def get_vectorstore(persist_directory: str = CHROMA_DIR) -> Chroma:
-    """Return (and lazily create) the shared Chroma vector store."""
-    global _vectorstore
-    if _vectorstore is None:
-        _vectorstore = Chroma(
-            collection_name=COLLECTION_NAME,
+def get_vectorstore(persist_directory: str = CHROMA_DIR, collection_name: str = COLLECTION_NAME) -> Chroma:
+    """Return (and lazily create) the shared Chroma vector store for a specific collection."""
+    global _vectorstores
+    if collection_name not in _vectorstores:
+        _vectorstores[collection_name] = Chroma(
+            collection_name=collection_name,
             embedding_function=get_embeddings(),
             persist_directory=persist_directory,
         )
-    return _vectorstore
+    return _vectorstores[collection_name]
 
 
 def reset_vectorstore() -> None:
-    """Reset the cached vectorstore (useful for tests)."""
-    global _vectorstore
-    _vectorstore = None
+    """Reset the cached vectorstores (useful for tests)."""
+    global _vectorstores
+    _vectorstores.clear()
 
 
 # ── public API ───────────────────────────────────────────────────────────────
@@ -64,12 +64,12 @@ def sanitise_text(text: str) -> str:
         "utf-8", errors="replace"
     ).decode("utf-8", errors="replace")
 
-def add_documents(docs: list[Document], persist_directory: str = CHROMA_DIR) -> int:
+def add_documents(docs: list[Document], persist_directory: str = CHROMA_DIR, collection_name: str = COLLECTION_NAME) -> int:
     """Add pre-chunked documents to the vector store.
 
     Returns the number of chunks added.
     """
-    vs = get_vectorstore(persist_directory)
+    vs = get_vectorstore(persist_directory, collection_name)
     
     batch_size = 150
     for i in range(0, len(docs), batch_size):
@@ -81,27 +81,31 @@ def add_documents(docs: list[Document], persist_directory: str = CHROMA_DIR) -> 
     return len(docs)
 
 
-def ingest_pdf(file: str | BinaryIO, persist_directory: str = CHROMA_DIR) -> int:
+def ingest_pdf(file: str | BinaryIO, persist_directory: str = CHROMA_DIR, collection_name: str = COLLECTION_NAME) -> int:
     """Load, chunk, embed and store a PDF in one call.
 
     Returns the number of chunks indexed.
     """
-    vs = get_vectorstore(persist_directory)
+    vs = get_vectorstore(persist_directory, collection_name)
     try:
         vs.delete_collection()
     except Exception:
         pass
-    reset_vectorstore()
+    
+    # We must reset the specific collection so it creates a fresh one
+    global _vectorstores
+    if collection_name in _vectorstores:
+        del _vectorstores[collection_name]
     
     chunks = load_and_chunk_pdf(file)
     if not chunks:
         return 0
-    return add_documents(chunks, persist_directory)
+    return add_documents(chunks, persist_directory, collection_name)
 
 
-def retrieve(query: str, k: int = 10, persist_directory: str = CHROMA_DIR) -> list[Document]:
+def retrieve(query: str, k: int = 10, persist_directory: str = CHROMA_DIR, collection_name: str = COLLECTION_NAME) -> list[Document]:
     """Return the top-*k* most relevant document chunks for *query*."""
-    vs = get_vectorstore(persist_directory)
+    vs = get_vectorstore(persist_directory, collection_name)
     try:
         results = vs.similarity_search(query, k=k)
     except Exception:
@@ -110,9 +114,9 @@ def retrieve(query: str, k: int = 10, persist_directory: str = CHROMA_DIR) -> li
     return results
 
 
-def retrieve_as_text(query: str, k: int = 10, persist_directory: str = CHROMA_DIR) -> str:
+def retrieve_as_text(query: str, k: int = 10, persist_directory: str = CHROMA_DIR, collection_name: str = COLLECTION_NAME) -> str:
     """Retrieve top-*k* chunks and concatenate them into a single context string."""
-    docs = retrieve(query, k=k, persist_directory=persist_directory)
+    docs = retrieve(query, k=k, persist_directory=persist_directory, collection_name=collection_name)
     if not docs:
         return ""
     parts: list[str] = []
@@ -123,9 +127,9 @@ def retrieve_as_text(query: str, k: int = 10, persist_directory: str = CHROMA_DI
     return "\n\n".join(parts)
 
 
-def collection_count(persist_directory: str = CHROMA_DIR) -> int:
+def collection_count(persist_directory: str = CHROMA_DIR, collection_name: str = COLLECTION_NAME) -> int:
     """Return the number of documents currently in the collection."""
-    vs = get_vectorstore(persist_directory)
+    vs = get_vectorstore(persist_directory, collection_name)
     try:
         return vs._collection.count()
     except Exception:
@@ -141,9 +145,9 @@ if IS_CLOUD:
 else:
     client = chromadb.PersistentClient(path=CHROMA_DIR)
 
-def retrieve_context(query: str, n_results: int = 3) -> list[str]:
+def retrieve_context(query: str, n_results: int = 3, collection_name: str = COLLECTION_NAME) -> list[str]:
     col = client.get_or_create_collection(
-        name=COLLECTION_NAME,
+        name=collection_name,
         metadata={"hnsw:space": "cosine"}
     )
     results = col.query(

@@ -104,8 +104,11 @@ def router_node(state: AgentState) -> dict[str, Any]:
     last_msg = messages[-1]
     user_text = last_msg.content if hasattr(last_msg, "content") else str(last_msg)
 
+    session_id = state.get("session_id", "")
+    coll_name = f"user_{session_id.replace('-', '')}" if session_id else "studymate_notes"
+    
     # Check if a PDF is uploaded in ChromaDB
-    has_notes = collection_count() > 0
+    has_notes = collection_count(collection_name=coll_name) > 0
     route_prompt = ROUTE_PROMPT_WITH_NOTES if has_notes else ROUTE_PROMPT_WITHOUT_NOTES
 
     llm = _get_llm(temperature=0.0)
@@ -170,8 +173,11 @@ def explain_node(state: AgentState) -> dict[str, Any]:
     if not safe_name or safe_name.lower() in ["", "none", "null"]:
         safe_name = "Student"
 
+    session_id = state.get("session_id", "")
+    coll_name = f"user_{session_id.replace('-', '')}" if session_id else "studymate_notes"
+    
     # Try to get RAG context
-    chunks = retrieve_context(topic, n_results=3)
+    chunks = retrieve_context(topic, n_results=3, collection_name=coll_name)
     
     if chunks:
         context_block = "\n\n".join(chunks)
@@ -283,11 +289,14 @@ def quiz_generate_node(state: AgentState) -> dict[str, Any]:
         safe_name = "Student"
 
     # Check if a PDF is uploaded to generate custom quiz questions from it
-    has_notes = collection_count() > 0
+    session_id = state.get("session_id", "")
+    coll_name = f"user_{session_id.replace('-', '')}" if session_id else "studymate_notes"
+    
+    has_notes = collection_count(collection_name=coll_name) > 0
     rag_ctx = ""
     if has_notes:
         try:
-            rag_ctx = retrieve_as_text(topic, k=10)
+            rag_ctx = retrieve_as_text(topic, k=10, collection_name=coll_name)
         except Exception:
             pass
 
@@ -505,11 +514,12 @@ def study_plan_node(state: AgentState) -> dict[str, Any]:
             "error": "",
         }
 
-    has_notes = collection_count() > 0
+    coll_name = f"user_{session_id.replace('-', '')}" if session_id else "studymate_notes"
+    has_notes = collection_count(collection_name=coll_name) > 0
     rag_ctx = ""
     if has_notes:
         try:
-            rag_ctx = retrieve_as_text(topic, k=10)
+            rag_ctx = retrieve_as_text(topic, k=10, collection_name=coll_name)
         except Exception:
             pass
 
@@ -589,8 +599,11 @@ def rag_query_node(state: AgentState) -> dict[str, Any]:
     last_msg = messages[-1] if messages else None
     user_text = last_msg.content if last_msg and hasattr(last_msg, "content") else "What are the key concepts?"
 
+    session_id = state.get("session_id", "")
+    coll_name = f"user_{session_id.replace('-', '')}" if session_id else "studymate_notes"
+    
     # Check if there are any documents in the vector store first
-    if collection_count() == 0:
+    if collection_count(collection_name=coll_name) == 0:
         no_ctx = ("I don't have any uploaded notes to search through yet. "
                   "Please upload a PDF in the sidebar first, then ask your question again!")
         return {
@@ -600,7 +613,7 @@ def rag_query_node(state: AgentState) -> dict[str, Any]:
             "error": "",
         }
 
-    chunks = retrieve_context(user_text, n_results=3)
+    chunks = retrieve_context(user_text, n_results=3, collection_name=coll_name)
     
     if not chunks or all(c.strip() == "" for c in chunks):
         # Truly no content found
