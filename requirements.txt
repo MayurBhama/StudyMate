@@ -1,24 +1,23 @@
 # LangGraph and LangChain
-langgraph==0.2.28
-langchain==0.3.7
-langchain-core==0.3.15
-langchain-groq==0.2.1
-langchain-community==0.3.7
-langchain-text-splitters==0.3.2
+langgraph==0.4.1
+langchain==0.3.25
+langchain-core==0.3.63
+langchain-groq==0.3.2
+langchain-community==0.3.24
+langchain-text-splitters==0.3.8
 
-# LLM observability
-langsmith==0.1.140
+# Observability
+langsmith==0.3.42
 
 # RAG
-chromadb==0.4.24
-sentence-transformers==2.7.0
+chromadb==0.5.23
+sentence-transformers==4.1.0
 
 # PDF
-pypdf==4.3.1
+pypdf==5.6.0
 
 # UI
-streamlit==1.39.0
+streamlit==1.45.1
 
 # Utils
-python-dotenv==1.0.1
-pydantic==2.8.2
+python-dotenv==1.1.0
