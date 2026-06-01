@@ -190,7 +190,6 @@ def _handle_plan_approval(approved: bool) -> None:
 
 with st.sidebar:
     st.markdown("# StudyMate")
-    st.markdown("*Your personalised AI study companion*")
     st.divider()
 
     # -- Student name ----------------------------------------------------------
@@ -277,9 +276,7 @@ st.markdown(
             font-weight: 700;
             margin-bottom: 0.25rem;
         ">StudyMate</h1>
-        <p style="color: #94a3b8; font-size: 1.1rem; margin-bottom: 1rem;">
-            Your personalised AI study companion
-        </p>
+
         <div style="color: #cbd5e1; font-size: 0.95rem; display: flex; justify-content: center; gap: 1.5rem; flex-wrap: wrap; max-width: 600px; margin: 0 auto;">
             <span>• Explain topics</span>
             <span>• Take a quiz</span>
