@@ -6,6 +6,7 @@ note search.  Powered by LangGraph + Groq + ChromaDB.
 
 from __future__ import annotations
 
+
 import os
 import uuid
 from typing import Any
@@ -196,16 +197,17 @@ with st.sidebar:
 
     # -- Student name ----------------------------------------------------------
     st.markdown("### Student Profile")
-    student_name = st.text_input(
+    raw_name = st.text_input(
         "Your name",
         value=st.session_state.get("student_name", ""),
         placeholder="Enter your name",
         key="name_input",
     ).strip()
-    if not student_name:
-        student_name = ""
-    if student_name and student_name != st.session_state.get("student_name"):
-        st.session_state.student_name = student_name
+    
+    student_name = raw_name if raw_name else "Student"
+    
+    if student_name != st.session_state.get("student_name"):
+        st.session_state["student_name"] = student_name
         st.session_state.session_id = ensure_session(
             student_name, st.session_state.get("session_id") or None
         )
@@ -247,6 +249,21 @@ with st.sidebar:
     else:
         st.markdown("_No weak topics recorded yet._")
 
+    # -- Session History -------------------------------------------------------
+    st.divider()
+    st.markdown("### Session History")
+    
+    session_id = st.session_state.get("session_id")
+    if session_id:
+        plan = get_latest_plan(session_id)
+        if plan:
+            with st.expander("Saved Study Plan"):
+                st.markdown(plan.get("plan_text", ""))
+        else:
+            st.markdown("_No study plan saved yet._")
+    else:
+        st.markdown("_No session active._")
+
 # -- Main area -----------------------------------------------------------------
 
 st.markdown(
@@ -287,8 +304,8 @@ if st.session_state.get("pending_plan") and st.session_state.get("plan_approved"
     with col1:
         if st.button("Approve", key="approve_plan", use_container_width=True, type="primary"):
             st.session_state.plan_approved = True
+            st.session_state.messages.append(HumanMessage(content="I approve of the schedule you proposed. Let's move on!"))
             _handle_plan_approval(True)
-            st.session_state.trigger_prompt = "I approve of the schedule you proposed. Let's move on!"
             st.rerun()
     with col2:
         if st.button("Reject", key="reject_plan", use_container_width=True):

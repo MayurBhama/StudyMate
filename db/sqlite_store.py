@@ -85,11 +85,12 @@ def create_session(student_name: str, db_path: Path = DB_PATH) -> str:
     """Create a new session and return its UUID."""
     session_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc).isoformat()
+    name_to_save = student_name.strip() if student_name else "Student"
     with _get_conn(db_path) as conn:
         conn.execute(
             "INSERT INTO sessions (session_id, student_name, created_at, updated_at) "
             "VALUES (?, ?, ?, ?)",
-            (session_id, student_name, now, now),
+            (session_id, name_to_save, now, now),
         )
     return session_id
 

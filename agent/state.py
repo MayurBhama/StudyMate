@@ -45,7 +45,7 @@ class AgentState(TypedDict, total=False):
     """
 
     messages: Annotated[list, add_messages]
-    student_name: str
+    student_name: str  # default is "Student"
     topic: str
     weak_topics: list[str]
     quiz_score: float

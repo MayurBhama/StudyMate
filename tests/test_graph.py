@@ -70,7 +70,7 @@ class TestRouterNode:
 class TestExplainNode:
     """Test the explanation node."""
 
-    @patch("agent.nodes.retrieve_as_text", return_value="")
+    @patch("agent.nodes.retrieve_context", return_value=[])
     @patch("agent.nodes._get_llm")
     def test_explain_returns_response(self, mock_llm_factory, mock_rag):
         mock_llm = MagicMock()

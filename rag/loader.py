@@ -30,6 +30,8 @@ def load_pdf(file: str | BinaryIO) -> list[Document]:
     docs: list[Document] = []
     for i, page in enumerate(reader.pages):
         text = page.extract_text() or ""
+        # Encode to UTF-8 and back to handle Windows charmap issues
+        text = text.encode("utf-8", errors="replace").decode("utf-8", errors="replace")
         if text.strip():
             docs.append(
                 Document(page_content=text, metadata={"source": source, "page": i + 1})

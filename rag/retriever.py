@@ -56,6 +56,11 @@ def reset_vectorstore() -> None:
 
 # ── public API ───────────────────────────────────────────────────────────────
 
+def sanitise_text(text: str) -> str:
+    return text.encode(
+        "utf-8", errors="replace"
+    ).decode("utf-8", errors="replace")
+
 def add_documents(docs: list[Document], persist_directory: str = CHROMA_DIR) -> int:
     """Add pre-chunked documents to the vector store.
 
@@ -65,7 +70,10 @@ def add_documents(docs: list[Document], persist_directory: str = CHROMA_DIR) -> 
     
     batch_size = 150
     for i in range(0, len(docs), batch_size):
-        vs.add_documents(docs[i : i + batch_size])
+        batch = docs[i : i + batch_size]
+        for doc in batch:
+            doc.page_content = sanitise_text(doc.page_content)
+        vs.add_documents(batch)
         
     return len(docs)
 
@@ -88,7 +96,7 @@ def ingest_pdf(file: str | BinaryIO, persist_directory: str = CHROMA_DIR) -> int
     return add_documents(chunks, persist_directory)
 
 
-def retrieve(query: str, k: int = 3, persist_directory: str = CHROMA_DIR) -> list[Document]:
+def retrieve(query: str, k: int = 10, persist_directory: str = CHROMA_DIR) -> list[Document]:
     """Return the top-*k* most relevant document chunks for *query*."""
     vs = get_vectorstore(persist_directory)
     try:
@@ -99,7 +107,7 @@ def retrieve(query: str, k: int = 3, persist_directory: str = CHROMA_DIR) -> lis
     return results
 
 
-def retrieve_as_text(query: str, k: int = 3, persist_directory: str = CHROMA_DIR) -> str:
+def retrieve_as_text(query: str, k: int = 10, persist_directory: str = CHROMA_DIR) -> str:
     """Retrieve top-*k* chunks and concatenate them into a single context string."""
     docs = retrieve(query, k=k, persist_directory=persist_directory)
     if not docs:
@@ -119,3 +127,21 @@ def collection_count(persist_directory: str = CHROMA_DIR) -> int:
         return vs._collection.count()
     except Exception:
         return 0
+
+# -- Raw ChromaDB Client for retrieve_context ---------------------------------
+import chromadb
+from chromadb.config import Settings
+
+client = chromadb.PersistentClient(path=CHROMA_DIR)
+
+def retrieve_context(query: str, n_results: int = 3) -> list[str]:
+    col = client.get_or_create_collection(
+        name=COLLECTION_NAME,
+        metadata={"hnsw:space": "cosine"}
+    )
+    results = col.query(
+        query_texts=[query],
+        n_results=n_results
+    )
+    chunks = results["documents"][0] if results["documents"] else []
+    return [sanitise_text(c) for c in chunks]

@@ -18,7 +18,7 @@ from langchain_groq import ChatGroq
 from agent.state import AgentState
 from agent.memory import trim_messages, persist_weak_topics
 from db.sqlite_store import save_quiz_score, save_study_plan, get_weak_topics
-from rag.retriever import retrieve_as_text, collection_count
+from rag.retriever import retrieve_as_text, collection_count, retrieve_context
 
 load_dotenv()
 
@@ -161,40 +161,47 @@ def explain_node(state: AgentState) -> dict[str, Any]:
     If RAG context is available (notes uploaded), it is included as
     supporting material.
     """
-    topic = state.get("topic", "the topic")
-    student = state.get("student_name", "Student")
+    topic = state.get("topic", "")
     messages = state.get("messages", [])
+    user_message = messages[-1].content if messages and hasattr(messages[-1], "content") else str(messages[-1]) if messages else ""
+    topic = topic or user_message
+
+    safe_name = state.get("student_name", "").strip()
+    if not safe_name or safe_name.lower() in ["", "none", "null"]:
+        safe_name = "Student"
 
     # Try to get RAG context
-    rag_ctx = ""
-    try:
-        rag_ctx = retrieve_as_text(topic, k=3)
-    except Exception:
-        pass
+    chunks = retrieve_context(topic, n_results=3)
+    
+    if chunks:
+        context_block = "\n\n".join(chunks)
+        context_instruction = f"""
+Use the following content from the student's uploaded notes 
+as your primary source. Supplement with general knowledge only 
+if the notes are insufficient.
 
-    has_notes = bool(rag_ctx)
-    if has_notes:
+NOTES CONTENT:
+{context_block}"""
+    else:
+        context_instruction = ""
+
+    if chunks:
         system_content = f"""\
-You are StudyMate, a study tutor helping {student}.
-Answer ONLY based on the context provided below.
-If the context does not cover the topic fully, say:
+You are StudyMate, a study tutor helping {safe_name}.
+{context_instruction}
+If the context does not cover the topic fully, you may use your general knowledge to explain it, but you MUST add this disclaimer at the beginning:
 'Your notes do not cover this completely. Here is a general explanation -- please verify from your textbook.'
 Never present uncertain information as fact. If you are not sure, say so explicitly.
-Address {student} by name at the start of your response.
-
-Retrieved context from {student}'s uploaded notes:
----
-{rag_ctx}
----
+Address {safe_name} by name at the start of your response.
 
 Explain the topic clearly at an undergraduate level.
 Use examples, analogies, and structured formatting (headers, bullet points).
 """
     else:
         system_content = f"""\
-You are StudyMate, a study tutor helping {student}.
+You are StudyMate, a study tutor helping {safe_name}.
 The student has NOT uploaded any notes, so you are answering from general knowledge.
-Start your response by addressing {student} by name.
+Start your response by addressing {safe_name} by name.
 Then add this disclaimer at the beginning:
 'I don\'t have your notes on this topic. Here is a general explanation -- please verify from your textbook.'
 Explain the topic clearly at an undergraduate level.
@@ -216,7 +223,7 @@ Never present uncertain information as fact. If you are not sure, say so explici
     return {
         "response": response,
         "messages": [AIMessage(content=response)],
-        "rag_context": rag_ctx,
+        "rag_context": "\n\n".join(chunks) if chunks else "",
         "error": "",
     }
 
@@ -254,7 +261,9 @@ QUIZ_EVALUATE_PROMPT = """\
 You are a strict quiz evaluator. Follow these rules exactly:
 1. Compare student answer ONLY against the correct answer provided.
 2. Do not give partial credit. An answer is correct or incorrect.
-3. For each question, write ONE line: "Q[number]: [Correct/Incorrect] -- [brief explanation]"
+3. Format each question's evaluation as a bullet point with double newlines between them, like:
+   - **Q[number]:** [Correct/Incorrect] — [brief explanation]
+   
 4. Do NOT output a final score or weak areas list. The system calculates those.
 5. Be concise and factual.
 
@@ -268,13 +277,17 @@ def quiz_generate_node(state: AgentState) -> dict[str, Any]:
     topic = state.get("topic", "general")
     weak_topics = state.get("weak_topics", [])
     attempts = state.get("quiz_attempts", 0)
+    
+    safe_name = state.get("student_name", "").strip()
+    if not safe_name or safe_name.lower() in ["", "none", "null"]:
+        safe_name = "Student"
 
     # Check if a PDF is uploaded to generate custom quiz questions from it
     has_notes = collection_count() > 0
     rag_ctx = ""
     if has_notes:
         try:
-            rag_ctx = retrieve_as_text(topic, k=3)
+            rag_ctx = retrieve_as_text(topic, k=10)
         except Exception:
             pass
 
@@ -309,14 +322,13 @@ def quiz_generate_node(state: AgentState) -> dict[str, Any]:
         }
 
     # Build a readable quiz message
-    student = state.get("student_name", "Student")
     quiz_text = f"**Quiz on {topic}** (Attempt {attempts + 1}/3)\n\n"
     for i, q in enumerate(questions, 1):
         quiz_text += f"**Q{i}.** {q['question']}\n"
         for opt in q["options"]:
             quiz_text += f"  {opt}\n"
         quiz_text += "\n"
-    quiz_text += f"\nGood luck, {student}! Select your answers below."
+    quiz_text += f"\nGood luck, {safe_name}! Select your answers below."
 
     return {
         "quiz_questions": questions,
@@ -334,6 +346,10 @@ def quiz_evaluate_node(state: AgentState) -> dict[str, Any]:
     session_id = state.get("session_id", "")
     topic = state.get("topic", "general")
     attempts = state.get("quiz_attempts", 0)
+
+    safe_name = state.get("student_name", "").strip()
+    if not safe_name or safe_name.lower() in ["", "none", "null"]:
+        safe_name = "Student"
 
     if not questions or not answers_raw:
         return {
@@ -383,14 +399,12 @@ def quiz_evaluate_node(state: AgentState) -> dict[str, Any]:
         except Exception:
             pass
 
-    student = state.get("student_name", "Student")
-
     result_text = f"**Quiz Results -- {topic}**\n\n"
     result_text += f"**Score: {score}%** ({correct_count}/{len(questions)} correct)\n\n"
     result_text += feedback
 
     if score < 70 and attempts < 3:
-        result_text += f"\n\nKeep going, {student}! Let's try again on your weak areas. (Attempt {attempts}/3)"
+        result_text += f"\n\nKeep going, {safe_name}! Let's try again on your weak areas. (Attempt {attempts}/3)"
         return {
             "quiz_score": score,
             "weak_topics": list(set(state.get("weak_topics", []) + [topic])),
@@ -400,9 +414,9 @@ def quiz_evaluate_node(state: AgentState) -> dict[str, Any]:
         }
 
     if score >= 70:
-        result_text += f"\n\nWell done, {student}! You passed the quiz!"
+        result_text += f"\n\nWell done, {safe_name}! You passed the quiz!"
     else:
-        result_text += f"\n\nGood effort, {student}. Let's add these to your study plan and review them."
+        result_text += f"\n\nGood effort, {safe_name}. Let's add these to your study plan and review them."
 
     return {
         "quiz_score": score,
@@ -473,14 +487,17 @@ Make it realistic and encouraging.
 
 def study_plan_node(state: AgentState) -> dict[str, Any]:
     """Generate a 7-day study plan and pause for HITL approval."""
-    student = state.get("student_name", "Student")
+    safe_name = state.get("student_name", "").strip()
+    if not safe_name or safe_name.lower() in ["", "none", "null"]:
+        safe_name = "Student"
+        
     topic = state.get("topic", "general")
     session_id = state.get("session_id", "")
     weak_topics = state.get("weak_topics", [])
     messages = state.get("messages", [])
 
     if not weak_topics:
-        no_data_msg = (f"{student}, please complete at least one quiz first "
+        no_data_msg = (f"{safe_name}, please complete at least one quiz first "
                        "so I can personalise your study plan based on your weak areas.")
         return {
             "response": no_data_msg,
@@ -492,13 +509,13 @@ def study_plan_node(state: AgentState) -> dict[str, Any]:
     rag_ctx = ""
     if has_notes:
         try:
-            rag_ctx = retrieve_as_text(topic, k=3)
+            rag_ctx = retrieve_as_text(topic, k=10)
         except Exception:
             pass
 
     llm = _get_llm(temperature=0.7)
     prompt = STUDY_PLAN_PROMPT.format(
-        student=student,
+        student=safe_name,
         weak_topics=", ".join(weak_topics),
         topic=topic,
     )
@@ -565,7 +582,9 @@ def study_plan_save_node(state: AgentState) -> dict[str, Any]:
 def rag_query_node(state: AgentState) -> dict[str, Any]:
     """Answer a question using retrieved context from uploaded notes."""
     messages = state.get("messages", [])
-    student = state.get("student_name", "Student")
+    safe_name = state.get("student_name", "").strip()
+    if not safe_name or safe_name.lower() in ["", "none", "null"]:
+        safe_name = "Student"
 
     last_msg = messages[-1] if messages else None
     user_text = last_msg.content if last_msg and hasattr(last_msg, "content") else "What are the key concepts?"
@@ -581,27 +600,39 @@ def rag_query_node(state: AgentState) -> dict[str, Any]:
             "error": "",
         }
 
-    # Retrieve context
-    rag_ctx = ""
-    try:
-        rag_ctx = retrieve_as_text(user_text, k=3)
-    except Exception:
-        pass
+    chunks = retrieve_context(user_text, n_results=3)
+    
+    if not chunks or all(c.strip() == "" for c in chunks):
+        # Truly no content found
+        response = (f"I searched your uploaded notes but could not "
+                    f"find relevant content on this topic, {safe_name}. "
+                    f"Here is a general explanation instead:\n\n")
+        # Then call LLM with general knowledge fallback
+        use_rag = False
+        context_text = ""
+    else:
+        # Content found — inject into prompt
+        context_text = "\n\n---\n\n".join(chunks)
+        use_rag = True
 
-    system_content = f"""\
-You are helping {student} understand their study notes.
-Answer ONLY using the retrieved context below.
-Do not add information from outside the context.
-If the context does not contain the answer, say:
-'Your uploaded notes do not cover this. I cannot answer reliably.'
-Quote which part of the notes you used to answer.
-Address {student} by name at the start of your response.
+    if use_rag:
+        system_content = f"""You are a study tutor helping {safe_name}.
+Answer using the context below. Stay grounded to this content.
+If the context partially covers the topic, use what is there 
+and note what is not covered.
+Do not say the notes don't cover something if any relevant 
+content exists in the context.
 
-Retrieved context from {student}'s uploaded notes:
----
-{rag_ctx}
----
-"""
+CONTEXT FROM UPLOADED NOTES:
+{context_text}
+
+Answer the student's question using this context."""
+    else:
+        system_content = f"""You are a study tutor helping {safe_name}.
+The student's uploaded notes do not contain this topic.
+Provide a clear general explanation.
+Start with: '{safe_name}, your uploaded notes do not cover this 
+topic directly. Here is a general explanation:'"""
 
     llm = _get_llm(temperature=0.3)
     conv = [SystemMessage(content=system_content), HumanMessage(content=user_text)]
@@ -610,6 +641,6 @@ Retrieved context from {student}'s uploaded notes:
     return {
         "response": response,
         "messages": [AIMessage(content=response)],
-        "rag_context": rag_ctx,
+        "rag_context": context_text,
         "error": "",
     }
