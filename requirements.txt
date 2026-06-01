@@ -5,12 +5,13 @@ langchain-core==0.3.63
 langchain-groq==0.3.2
 langchain-community==0.3.24
 langchain-text-splitters==0.3.8
+langchain-chroma>=0.2.0
 
 # Observability
 langsmith==0.3.42
 
-# RAG
-chromadb==0.5.23
+# RAG - chromadb unpinned to get version with tokenizers>=0.13.2 (no upper bound)
+chromadb>=0.6.0
 sentence-transformers==4.1.0
 
 # PDF
