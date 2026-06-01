@@ -276,7 +276,6 @@ st.markdown(
             font-weight: 700;
             margin-bottom: 0.25rem;
         ">StudyMate</h1>
-
         <div style="color: #cbd5e1; font-size: 0.95rem; display: flex; justify-content: center; gap: 1.5rem; flex-wrap: wrap; max-width: 600px; margin: 0 auto;">
             <span>• Explain topics</span>
             <span>• Take a quiz</span>
