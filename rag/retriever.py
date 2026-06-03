@@ -157,3 +157,37 @@ def retrieve_context(query: str, n_results: int = 3, collection_name: str = COLL
     chunks = results["documents"][0] if results["documents"] else []
     return [sanitise_text(c) for c in chunks]
 
+
+def get_random_chunks(
+    k: int = 10,
+    collection_name: str = COLLECTION_NAME,
+) -> str:
+    """Get random chunks from collection to discover topics.
+
+    Used when user wants quiz from notes without specifying topic.
+    """
+    try:
+        coll = client.get_or_create_collection(
+            name=collection_name,
+            metadata={"hnsw:space": "cosine"},
+        )
+        total = coll.count()
+        if total == 0:
+            return ""
+
+        import random
+
+        all_docs = coll.get()
+        documents = all_docs.get("documents", [])
+
+        if not documents:
+            return ""
+
+        sample_size = min(k, len(documents))
+        sampled = random.sample(documents, sample_size)
+
+        return "\n\n---\n\n".join(sampled)
+
+    except Exception:
+        return ""
+

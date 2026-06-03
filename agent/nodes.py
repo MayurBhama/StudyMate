@@ -18,7 +18,7 @@ from langchain_groq import ChatGroq
 from agent.state import AgentState
 from agent.memory import trim_messages, persist_weak_topics
 from db.sqlite_store import save_quiz_score, save_study_plan
-from rag.retriever import retrieve_as_text, collection_count, retrieve_context
+from rag.retriever import retrieve_as_text, collection_count, retrieve_context, get_random_chunks
 
 load_dotenv()
 
@@ -279,7 +279,7 @@ Quiz details:
 
 
 def quiz_generate_node(state: AgentState) -> dict[str, Any]:
-    """Generate 3 MCQ questions on the current topic."""
+    """Generate 5 MCQ questions on the current topic."""
     topic = state.get("topic", "general")
     weak_topics = state.get("weak_topics", [])
     attempts = state.get("quiz_attempts", 0)
@@ -288,15 +288,43 @@ def quiz_generate_node(state: AgentState) -> dict[str, Any]:
     if not safe_name or safe_name.lower() in ["", "none", "null"]:
         safe_name = "Student"
 
+    # ── Fix 1: Detect "quiz from notes" intent ───────────────────────────
+    NOTES_INTENT_KEYWORDS = [
+        "note", "notes", "uploaded", "pdf", "document",
+        "my file", "what i uploaded", "from notes",
+        "from pdf", "general", "",
+    ]
+
+    topic_lower = topic.lower().strip()
+    wants_notes_quiz = any(
+        keyword in topic_lower
+        for keyword in NOTES_INTENT_KEYWORDS
+    ) or topic_lower in ["general", "", "none"]
+
     # Check if a PDF is uploaded to generate custom quiz questions from it
     session_id = state.get("session_id", "")
     coll_name = f"user_{session_id.replace('-', '')}" if session_id else "studymate_notes"
-    
+
+    # ── Fix 3: Intent-aware retrieval ────────────────────────────────────
     has_notes = collection_count(collection_name=coll_name) > 0
     rag_ctx = ""
+
     if has_notes:
         try:
-            rag_ctx = retrieve_as_text(topic, k=10, collection_name=coll_name)
+            if wants_notes_quiz:
+                # User wants quiz from notes broadly —
+                # sample random chunks to discover topics
+                rag_ctx = get_random_chunks(
+                    k=15,
+                    collection_name=coll_name,
+                )
+            else:
+                # User specified a topic — search for it
+                rag_ctx = retrieve_as_text(
+                    topic,
+                    k=10,
+                    collection_name=coll_name,
+                )
         except Exception:
             pass
 
@@ -313,8 +341,45 @@ def quiz_generate_node(state: AgentState) -> dict[str, Any]:
     llm = _get_llm(temperature=0.7)
     
     prompt = QUIZ_GENERATE_PROMPT.format(topic=topic, weak_focus=weak_focus, previous_questions_focus=previous_questions_focus)
+
+    # ── Fix 4: Intent-aware prompt augmentation ──────────────────────────
     if rag_ctx:
-        prompt += f"\n\nIMPORTANT: Use the following retrieved context from the student's uploaded notes to generate questions that test their knowledge of this material specifically:\n{rag_ctx}"
+        if wants_notes_quiz:
+            prompt += f"""
+
+CRITICAL INSTRUCTION:
+The student wants to be quizzed on their uploaded notes.
+You have been given random samples from their notes below.
+
+Your job:
+1. Read the content carefully
+2. Identify 3 different topics or concepts present in it
+3. Generate one question per topic — all from this content only
+4. Do NOT ask questions about anything outside this content
+5. Do NOT ask general knowledge questions
+6. Every question must be directly answerable from the text below
+
+CONTENT FROM UPLOADED NOTES:
+{rag_ctx}
+
+Generate questions ONLY from the above content."""
+        else:
+            prompt += f"\n\nUse the following retrieved context from the student's uploaded notes to generate questions that test their knowledge of this material specifically:\n{rag_ctx}"
+    else:
+        # No notes uploaded or retrieval failed
+        if wants_notes_quiz:
+            return {
+                "response": (
+                    f"{safe_name}, I don't see any uploaded notes "
+                    f"to quiz you from. Please upload a PDF first "
+                    f"using the sidebar, then ask me to quiz you."
+                ),
+                "messages": [AIMessage(content=(
+                    f"{safe_name}, please upload your notes PDF "
+                    f"first, then I can quiz you from it."
+                ))],
+                "error": "no_notes_uploaded",
+            }
 
     llm_json = llm.bind(response_format={"type": "json_object"})
     result = _safe_invoke(llm_json, [SystemMessage(content=prompt)])
@@ -330,8 +395,9 @@ def quiz_generate_node(state: AgentState) -> dict[str, Any]:
             "error": "quiz_generation_failed",
         }
 
-    # Build a readable quiz message
-    quiz_text = f"**Quiz on {topic}** (Attempt {attempts + 1}/3)\n\n"
+    # ── Fix 5: Display topic update ──────────────────────────────────────
+    display_topic = "your uploaded notes" if wants_notes_quiz else topic
+    quiz_text = f"**Quiz on {display_topic}** (Attempt {attempts + 1}/3)\n\n"
     for i, q in enumerate(questions, 1):
         quiz_text += f"**Q{i}.** {q['question']}\n"
         for opt in q["options"]:
